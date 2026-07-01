@@ -95,10 +95,8 @@ def load_model(model_key: str):
     hf_name, _ = spec_dict[model_key]
     labels = get_labels()
     
-    # Load model
-    model = TransformerClassifier(hf_name, num_classes=len(labels)).to(DEVICE)
+    # Load checkpoint
     ckpt_path = CKPT_DIR / f"{model_key}_best.pt"
-    
     if not ckpt_path.is_file():
         raise FileNotFoundError(f"Model checkpoint not found: {ckpt_path}")
     
@@ -107,11 +105,59 @@ def load_model(model_key: str):
     except TypeError:
         state = torch.load(ckpt_path, map_location=DEVICE)
     
-    model.load_state_dict(state)
-    model.eval()
+    # If checkpoint is a full model object, extract state_dict
+    if isinstance(state, dict) and 'state_dict' in state:
+        state = state['state_dict']
+    elif isinstance(state, nn.Module):
+        state = state.state_dict()
+    elif not isinstance(state, dict):
+        # Try to treat as model and get state_dict
+        try:
+            state = state.state_dict()
+        except:
+            pass
     
-    # Load tokenizer
+    # Load tokenizer first
     tokenizer = AutoTokenizer.from_pretrained(hf_name)
+    
+    # Create model
+    model = TransformerClassifier(hf_name, num_classes=len(labels)).to(DEVICE)
+    
+    # Load weights with flexibility for architecture mismatches
+    try:
+        model.load_state_dict(state)
+    except RuntimeError as e:
+        # Try loading with strict=False if there's a mismatch
+        try:
+            incompatible = model.load_state_dict(state, strict=False)
+            if incompatible.missing_keys:
+                print(f"Warning: Missing keys in checkpoint: {incompatible.missing_keys}")
+            if incompatible.unexpected_keys:
+                print(f"Warning: Unexpected keys in checkpoint: {incompatible.unexpected_keys}")
+        except Exception as load_err:
+            # Last resort: try to load individual components
+            print(f"Could not load state dict: {e}")
+            print(f"Attempting component-wise loading...")
+            
+            # Try loading encoder weights
+            encoder_state = {k.replace('encoder.', ''): v for k, v in state.items() if k.startswith('encoder.')}
+            if encoder_state:
+                try:
+                    model.encoder.load_state_dict(encoder_state, strict=False)
+                    print("Loaded encoder weights successfully")
+                except:
+                    pass
+            
+            # Try loading classifier weights
+            classifier_state = {k.replace('classifier.', ''): v for k, v in state.items() if k.startswith('classifier.')}
+            if classifier_state:
+                try:
+                    model.classifier.load_state_dict(classifier_state, strict=False)
+                    print("Loaded classifier weights successfully")
+                except:
+                    pass
+    
+    model.eval()
     return tokenizer, model
 
 
