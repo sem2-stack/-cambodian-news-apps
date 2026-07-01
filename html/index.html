@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cambodian News Classifier</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- Header / navigation -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="white"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2" />
+            <path d="M18 14h-8" />
+            <path d="M15 18h-5" />
+            <path d="M10 6h8v4h-8V6Z" />
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">Cambodian News Classifier</div>
+          <div class="brand-sub">MULTI-CLASS AI ANALYSIS</div>
+        </div>
+      </div>
+
+      <nav class="nav" id="nav">
+        <button class="nav-btn active" data-page="classifier">
+          <span class="nav-icon">&#9883;</span> Classifier
+          <span class="nav-dot"></span>
+        </button>
+        <button class="nav-btn" data-page="history">
+          <span class="nav-icon">&#128336;</span> Session History
+        </button>
+        <button class="nav-btn" data-page="about">
+          <span class="nav-icon">&#9432;</span> About
+        </button>
+      </nav>
+    </header>
+
+    <!-- ===================== Classifier page ===================== -->
+    <section id="page-classifier" class="page">
+      <div class="grid-2">
+        <!-- Input card -->
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <p class="card-title">Input Section</p>
+              <p class="card-sub">Paste news text for classification</p>
+            </div>
+            <div class="counter">
+              <span id="char-count">0</span> chars &nbsp;|&nbsp;
+              <span id="word-count">0</span> words
+            </div>
+          </div>
+
+          <div class="tabs">
+            <button class="tab active" data-tab="text">&#9998; Direct Text Entry</button>
+            <button class="tab" data-tab="pdf">&#128196; PDF Upload</button>
+          </div>
+
+          <div id="tab-text" class="tab-panel">
+            <div class="field-hint" style="margin-bottom:8px;">
+              Perfect for copied articles or short texts
+            </div>
+            <div class="textarea-wrap">
+              <textarea
+                id="input-text"
+                class="textarea"
+                placeholder="Paste the news article body here (English). At least 50 words is recommended for a reliable classification."
+              ></textarea>
+              <button id="clear-input" class="textarea-clear" title="Clear text">&times;</button>
+            </div>
+          </div>
+
+          <div id="tab-pdf" class="tab-panel hidden">
+            <label class="pdf-drop" for="pdf-file">
+              <input id="pdf-file" type="file" accept="application/pdf,.pdf" hidden />
+              <div class="pdf-drop-icon">&#128196;</div>
+              <div class="pdf-drop-text">Click to choose a PDF article</div>
+              <div class="pdf-drop-hint">
+                The text is extracted on the server and loaded into the editor for analysis.
+              </div>
+            </label>
+            <div id="pdf-status" class="pdf-status hidden"></div>
+          </div>
+
+          <div class="model-row">
+            <label for="model-select" class="model-label">&#129302; Classification model</label>
+            <select id="model-select" class="model-select"></select>
+          </div>
+
+          <button id="analyze-btn" class="btn btn-primary btn-block" disabled>
+            <span class="nav-icon">&#9883;</span> Analyze Text
+          </button>
+        </div>
+
+        <!-- Result card -->
+        <div class="card" id="result-card">
+          <!-- Empty state -->
+          <div id="result-empty" class="result-empty">
+            <div class="result-empty-icon">&#128269;</div>
+            <p>
+              Enter article text and click <b>Analyze Text</b> to see the predicted
+              category and confidence scores.
+            </p>
+          </div>
+
+          <!-- Populated state -->
+          <div id="result-body" class="hidden">
+            <div class="result-head">
+              <span class="conf-pill" id="conf-pill">0.0% confidence</span>
+              <div class="result-kicker"><span class="trophy">&#127942;</span> TOP CLASSIFICATION</div>
+              <div class="result-cat" id="result-cat">—</div>
+            </div>
+
+            <div class="stat-grid">
+              <div class="stat-box">
+                <div class="stat-num" id="stat-chars">0</div>
+                <div class="stat-lab">Characters</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-num" id="stat-words">0</div>
+                <div class="stat-lab">Words</div>
+              </div>
+            </div>
+
+            <p id="length-note" class="ok-note">&#10003; Text length is optimal for classification</p>
+
+            <div class="scores">
+              <div class="scores-title">&#128202; Confidence Scores</div>
+              <div id="scores-list"></div>
+            </div>
+
+            <p class="model-caption" id="model-caption"></p>
+
+            <div class="result-actions">
+              <button id="export-btn" class="btn btn-ghost">&#11015; Export</button>
+              <button id="clear-result-btn" class="btn btn-ghost">&#128465; Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Session History page ===================== -->
+    <section id="page-history" class="page hidden">
+      <div class="card">
+        <p class="card-title">Session History</p>
+        <p class="card-sub">Classifications from this browser session (resets on refresh).</p>
+
+        <div id="history-empty" class="info-box">
+          No classifications yet. Analyze an article to populate the history.
+        </div>
+
+        <div id="history-content" class="hidden">
+          <div class="metrics">
+            <div class="metric"><div class="metric-num" id="m-articles">0</div><div class="metric-lab">Articles</div></div>
+            <div class="metric"><div class="metric-num" id="m-cats">0</div><div class="metric-lab">Categories used</div></div>
+            <div class="metric"><div class="metric-num" id="m-avg">0%</div><div class="metric-lab">Avg confidence</div></div>
+            <div class="metric"><div class="metric-num" id="m-top">—</div><div class="metric-lab">Top category</div></div>
+          </div>
+
+          <div class="history-filters">
+            <input id="history-search" class="text-input" type="text" placeholder="Filter by preview text…" />
+            <select id="history-cat" class="model-select"></select>
+          </div>
+
+          <div id="history-list"></div>
+
+          <div class="result-actions" style="margin-top:18px;">
+            <button id="export-csv-btn" class="btn btn-ghost">&#11015; Export All (CSV)</button>
+            <button id="clear-history-btn" class="btn btn-ghost">&#128465; Clear History</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== About page ===================== -->
+    <section id="page-about" class="page hidden">
+      <div class="card">
+        <p class="card-title">About</p>
+        <p class="about-text">
+          This dashboard classifies English-language Cambodian news articles into one of
+          five categories using transformer encoders fine-tuned on a custom corpus scraped
+          from Cambodian news outlets. It is the deployment deliverable (Part 3) of the
+          thesis project.
+        </p>
+
+        <h3 class="about-h">Categories</h3>
+        <p class="about-text" id="about-categories"></p>
+        <p class="about-caption">
+          This build uses the <i>class-balanced (undersampled) no-environment</i> corpus —
+          the Environment class was excluded and the remaining five categories were
+          undersampled to an equal count across the train/val/test splits.
+        </p>
+
+        <h3 class="about-h">Model card — test-set performance</h3>
+        <table class="model-table">
+          <thead>
+            <tr><th>Model</th><th>Accuracy</th><th>Macro F1</th><th>Available</th></tr>
+          </thead>
+          <tbody id="model-table-body"></tbody>
+        </table>
+        <div class="success-box">
+          <b>RoBERTa</b> has the top macro-F1 (91.77%) on this balanced corpus, with
+          <b>DistilBERT</b> close behind (91.11%). DistilBERT is the default — smallest,
+          fastest checkpoint and comfortably under the 5-second latency target.
+        </div>
+
+        <h3 class="about-h">Pipeline</h3>
+        <ol class="about-list">
+          <li><b>Preprocess</b> — lowercase, strip HTML / URLs / emails / digits, drop stop-words.</li>
+          <li><b>Tokenize</b> — model-specific HuggingFace tokenizer, <code>max_length=512</code>, body text only.</li>
+          <li><b>Classify</b> — <code>TransformerClassifier</code> ([CLS] &rarr; 512 &rarr; LogSoftmax over 5 classes).</li>
+          <li><b>Report</b> — <code>exp()</code> of log-probabilities gives the confidence scores shown.</li>
+        </ol>
+
+        <h3 class="about-h">Known limitations</h3>
+        <ul class="about-list">
+          <li>Trained only on a handful of Cambodian English-language outlets; may underperform on other regions or styles.</li>
+          <li>English only — Khmer-language or heavily code-switched text is out of scope.</li>
+          <li>History is per-session and clears on browser refresh.</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
