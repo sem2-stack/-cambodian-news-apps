@@ -54,38 +54,78 @@ git lfs install
 git lfs pull
 ```
 
-## Installation
+## Deployment
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/sem2-stack/-cambodian-news-apps.git
-   cd -cambodian-news-apps
-   ```
+### Option 1: Hugging Face Spaces ⭐ (Recommended)
 
-2. **Install dependencies**
+Best for ML/PyTorch apps with native model support.
+
+1. Go to [Hugging Face Spaces](https://huggingface.co/spaces)
+2. Click "Create new Space"
+   - Name: `cambodian-news-classifier`
+   - Space type: **Streamlit**
+   - Visibility: Public/Private
+
+3. Link your repository:
+   - Go to Space Settings → Repository → "Link repository"
+   - Select: `sem2-stack/-cambodian-news-apps`
+   - Branch: `main`
+   - Run command: `streamlit run streamlit_app.py`
+
+4. Done! Your app will be live at `huggingface.co/spaces/<username>/<space-name>`
+
+**Why HF Spaces?**
+- ✅ 50GB+ storage (models included)
+- ✅ PyTorch & transformers pre-optimized
+- ✅ Git LFS support built-in
+- ✅ Free tier with no time limits
+- ✅ Persistent storage for model caching
+
+### Option 2: Streamlit Cloud
+
+⚠️ Not recommended for large PyTorch models. Free tier has 1GB storage and memory limits.
+
+1. Go to [Streamlit Cloud](https://streamlit.io/cloud)
+2. Deploy from repository → Select this repo
+3. May encounter memory/storage issues with large models
+
+### Option 3: Docker (Self-hosted)
+
+For production deployments:
+
+```bash
+docker build -t cambodian-news-app .
+docker run -p 8501:8501 cambodian-news-app
+```
+
+## Local Development
+
+1. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Run the application**
-
-   **Option A: Streamlit**
+2. Run Streamlit:
    ```bash
    streamlit run streamlit_app.py
    ```
 
-   **Option B: Flask/Custom Server**
-   ```bash
-   python server.py
-   ```
+3. Open browser to `http://localhost:8501`
 
-## Usage
+## Troubleshooting
 
-### Via Streamlit
-Open your browser to `http://localhost:8501` after running streamlit.
+**Models not loading?**
+- Ensure Git LFS is installed: `git lfs install`
+- Pull models: `git lfs pull`
+- Check model files exist in `models/undersampling_no_environment/`
 
-### Via Web Server
-Open your browser to `http://localhost:5000` (or configured port).
+**ImportError on deployment?**
+- Verify all imports are from standard libraries or `requirements.txt`
+- Check `inference/predictor.py` doesn't import training modules
+
+**Out of memory?**
+- Use Hugging Face Spaces instead (more resources)
+- Or optimize model loading with caching
 
 ## Notes
 

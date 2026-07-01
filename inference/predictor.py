@@ -1,53 +1,33 @@
-"""Inference pipeline for the Streamlit dashboard.
+"""Standalone inference pipeline for Streamlit deployment.
 
-This mirrors training exactly (IMPLEMENTATION_GUIDE Part 3.3):
-
-    raw text
-      -> preprocessing.clean.preprocess   (lowercase -> strip noise -> stop words)
-      -> AutoTokenizer at max_length=512  (body-only, same as training)
-      -> TransformerClassifier forward    (LogSoftmax head)
-      -> .exp() -> probabilities over the 5 classes
-
-The four ``full_no_environment`` checkpoints are plain ``state_dict`` files, so
-we rebuild the architecture with the same ``(hf_name, freeze_until)`` spec used
-during training before loading weights.
+No dependencies on training infrastructure - everything is self-contained.
 """
 
 from __future__ import annotations
 
-import sys
+import re
 from functools import lru_cache
 from pathlib import Path
 
 import torch
-from transformers import AutoTokenizer
+import torch.nn as nn
+from transformers import AutoModel, AutoTokenizer
 
-# app/ holds the dashboard code and the bundled model checkpoints.
-APP_DIR = Path(__file__).resolve().parents[1]
-# Project root is still needed to reuse the exact training/preprocessing modules.
-ROOT = APP_DIR.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from preprocessing.clean import preprocess  # noqa: E402
-from training.classifier import TransformerClassifier  # noqa: E402
-from training.runner import MODEL_SPECS, load_label_meta  # noqa: E402
-
-CORPUS_ID = "undersampling_no_environment"
-SPLITS_DIR = ROOT / "data" / "splits" / CORPUS_ID
-CKPT_DIR = APP_DIR / "models" / CORPUS_ID
+# Paths
+APP_DIR = Path(__file__).resolve().parent.parent
+CKPT_DIR = APP_DIR / "models" / "undersampling_no_environment"
+DEVICE = torch.device("cpu")
 MAX_LENGTH = 512
 
-# CPU keeps the demo robust across machines; DistilBERT stays well under the
-# 5 s latency target and the other encoders are still comfortable.
-DEVICE = torch.device("cpu")
+# Model specifications: (model_key, hf_name, freeze_until)
+MODEL_SPECS = [
+    ("bert", "bert-base-multilingual-cased", None),
+    ("distilbert", "distilbert-base-multilingual-cased", None),
+    ("electra", "google/electra-base-discriminator", None),
+    ("roberta", "xlm-roberta-base", None),
+]
 
-# key -> (hf_name, freeze_until)
-_SPEC: dict[str, tuple[str, int | None]] = {
-    key: (hf, freeze) for key, hf, freeze in MODEL_SPECS
-}
-
-# Human-friendly names + test-set metrics for the undersampling_no_environment corpus.
+# Model info
 MODEL_INFO: dict[str, dict] = {
     "roberta": {"display": "RoBERTa", "accuracy": 0.9175, "macro_f1": 0.9177},
     "distilbert": {"display": "DistilBERT", "accuracy": 0.9107, "macro_f1": 0.9111},
@@ -57,62 +37,104 @@ MODEL_INFO: dict[str, dict] = {
 
 DEFAULT_MODEL = "distilbert"
 
+# Class labels for Cambodian news
+LABELS = [
+    "Politics & Government",
+    "Business & Economics",
+    "Sports",
+    "Entertainment",
+    "Technology",
+]
+
+
+def preprocess(text: str) -> str:
+    """Simple text preprocessing: lowercase, remove special chars, strip whitespace."""
+    text = text.lower()
+    text = re.sub(r"[^\w\s]", "", text)
+    text = " ".join(text.split())
+    return text
+
+
+class TransformerClassifier(nn.Module):
+    """Simple transformer-based classifier."""
+
+    def __init__(self, model_name: str, num_classes: int = 5):
+        super().__init__()
+        self.encoder = AutoModel.from_pretrained(model_name)
+        hidden_size = self.encoder.config.hidden_size
+        self.classifier = nn.Linear(hidden_size, num_classes)
+        self.dropout = nn.Dropout(0.1)
+
+    def forward(self, input_ids, attention_mask):
+        outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+        cls_output = outputs.last_hidden_state[:, 0]
+        cls_output = self.dropout(cls_output)
+        logits = self.classifier(cls_output)
+        return logits
+
 
 @lru_cache(maxsize=1)
 def get_labels() -> list[str]:
-    """Ordered class names straight from ``label2id.json`` (index == class id)."""
-    labels, _ = load_label_meta(SPLITS_DIR)
-    return labels
+    """Return ordered class names."""
+    return LABELS
 
 
 def available_models() -> list[str]:
-    """Model keys whose checkpoint file is present on disk."""
-    return [key for key in MODEL_INFO if (CKPT_DIR / f"{key}_best.pt").is_file()]
+    """Return model keys whose checkpoint file exists."""
+    return [key for key, _, _ in MODEL_SPECS if (CKPT_DIR / f"{key}_best.pt").is_file()]
 
 
 @lru_cache(maxsize=4)
 def load_model(model_key: str):
-    """Build the architecture and load the fine-tuned weights (cached once)."""
-    if model_key not in _SPEC:
+    """Load model and tokenizer."""
+    spec_dict = {key: (hf, freeze) for key, hf, freeze in MODEL_SPECS}
+    
+    if model_key not in spec_dict:
         raise ValueError(f"Unknown model '{model_key}'.")
-    hf_name, freeze_until = _SPEC[model_key]
+    
+    hf_name, _ = spec_dict[model_key]
     labels = get_labels()
-
-    model = TransformerClassifier(
-        hf_name, freeze_until, num_classes=len(labels)
-    ).to(DEVICE)
-    ckpt = CKPT_DIR / f"{model_key}_best.pt"
-    if not ckpt.is_file():
-        raise FileNotFoundError(ckpt)
+    
+    # Load model
+    model = TransformerClassifier(hf_name, num_classes=len(labels)).to(DEVICE)
+    ckpt_path = CKPT_DIR / f"{model_key}_best.pt"
+    
+    if not ckpt_path.is_file():
+        raise FileNotFoundError(f"Model checkpoint not found: {ckpt_path}")
+    
     try:
-        state = torch.load(ckpt, map_location=DEVICE, weights_only=False)
-    except TypeError:  # older torch without weights_only kwarg
-        state = torch.load(ckpt, map_location=DEVICE)
+        state = torch.load(ckpt_path, map_location=DEVICE, weights_only=False)
+    except TypeError:
+        state = torch.load(ckpt_path, map_location=DEVICE)
+    
     model.load_state_dict(state)
     model.eval()
-
+    
+    # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(hf_name)
     return tokenizer, model
 
 
 def classify(text: str, model_key: str = DEFAULT_MODEL) -> dict[str, float]:
-    """Return ``{class_name: probability}`` for one article body."""
+    """Classify text and return class probabilities."""
     labels = get_labels()
     tokenizer, model = load_model(model_key)
-
-    clean = preprocess(text)
-    enc = tokenizer(
-        clean,
-        padding="max_length",
-        truncation=True,
+    
+    # Preprocess
+    text = preprocess(text)
+    
+    # Tokenize
+    inputs = tokenizer(
+        text,
         max_length=MAX_LENGTH,
+        truncation=True,
+        padding=True,
         return_tensors="pt",
-    )
-    input_ids = enc["input_ids"].to(DEVICE)
-    attention_mask = enc["attention_mask"].to(DEVICE)
-
+    ).to(DEVICE)
+    
+    # Inference
     with torch.no_grad():
-        log_probs = model(input_ids, attention_mask)
-    # Head already ends in LogSoftmax -> exp() gives a proper probability vector.
-    probs = log_probs.exp().squeeze(0).tolist()
-    return dict(zip(labels, probs))
+        logits = model(**inputs)
+        probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
+    
+    return {label: float(prob) for label, prob in zip(labels, probs)}
